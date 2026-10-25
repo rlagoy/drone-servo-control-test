@@ -70,6 +70,28 @@ def test_missing_ack_times_out():
         assert dev.set_servo(FLAP_SERVO, 1500, ack_timeout=0.3) is None
 
 
+def test_gcs_heartbeat_does_not_hide_autopilot():
+    """A GCS heartbeat arriving first (the FC forwards them) must not be taken for the FC's."""
+    fc = FakeAutopilot()
+    gcs = mavutil.mavlink_connection(
+        f"udpout:127.0.0.1:{fc.port}", source_system=255, source_component=190
+    )
+    try:
+        with MAVLinkDevice(fc.connection_string) as dev:
+            for _ in range(3):
+                gcs.mav.heartbeat_send(
+                    mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0
+                )
+            fc.start()
+            hb = dev.wait_heartbeat(timeout=2.0)
+            assert hb is not None
+            assert hb.get_srcSystem() == 1
+            assert dev.device.target_system == 1
+    finally:
+        gcs.close()
+        fc.stop()
+
+
 def test_no_autopilot_no_heartbeat():
     fc = FakeAutopilot()  # created but never started: nothing is transmitting
     try:

@@ -75,8 +75,23 @@ class MAVLinkDevice:
         return self.device
 
     def wait_heartbeat(self, timeout: float = 5.0) -> Any | None:
-        """Block until a HEARTBEAT is received (from the other side)."""
-        return self._require_device().wait_heartbeat(timeout=timeout)
+        """
+        Block until a HEARTBEAT from a vehicle (autopilot) is received.
+
+        Heartbeats from ground stations, gimbals, ADS-B receivers and companion computers
+        are skipped: ArduPilot forwards these between its MAVLink ports, so they show up on
+        USB too. pymavlink locks ``target_system``/``target_component`` onto the first
+        vehicle heartbeat, so they are set once this returns a message.
+
+        Returns the HEARTBEAT, or None if none arrived within ``timeout`` seconds.
+        """
+        device = self._require_device()
+        deadline = time.monotonic() + timeout
+        while (remaining := deadline - time.monotonic()) > 0:
+            msg = device.recv_match(type="HEARTBEAT", blocking=True, timeout=remaining)
+            if msg is not None and device.probably_vehicle_heartbeat(msg):
+                return msg
+        return None
 
     def command_long(  # noqa: PLR0913, PLR0917
         self,

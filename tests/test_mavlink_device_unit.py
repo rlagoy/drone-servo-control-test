@@ -78,9 +78,33 @@ def test_context_manager_connects_and_closes(conn):
     conn.close.assert_called_once()
 
 
-def test_wait_heartbeat_passes_timeout(dev, conn):
-    dev.wait_heartbeat(timeout=2.5)
-    conn.wait_heartbeat.assert_called_once_with(timeout=2.5)
+def heartbeat(mav_type: int, autopilot: int = mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA):
+    return SimpleNamespace(type=mav_type, autopilot=autopilot)
+
+
+def test_wait_heartbeat_returns_vehicle_heartbeat(dev, conn):
+    vehicle = heartbeat(mavlink.MAV_TYPE_GROUND_ROVER)
+    conn.recv_match.return_value = vehicle
+    conn.probably_vehicle_heartbeat.return_value = True
+    assert dev.wait_heartbeat(timeout=2.5) is vehicle
+    conn.recv_match.assert_called_once()
+    assert conn.recv_match.call_args.kwargs["type"] == "HEARTBEAT"
+
+
+def test_wait_heartbeat_skips_non_vehicle_heartbeats(dev, conn):
+    """Regression: a GCS heartbeat forwarded by the FC used to be taken as the autopilot's."""
+    gcs = heartbeat(mavlink.MAV_TYPE_GCS, mavlink.MAV_AUTOPILOT_INVALID)
+    vehicle = heartbeat(mavlink.MAV_TYPE_FIXED_WING)
+    conn.recv_match.side_effect = [gcs, None, vehicle]
+    conn.probably_vehicle_heartbeat.side_effect = lambda m: m is vehicle
+    assert dev.wait_heartbeat(timeout=2.5) is vehicle
+    assert conn.recv_match.call_count == 3
+
+
+def test_wait_heartbeat_times_out_on_only_gcs_heartbeats(dev, conn):
+    conn.recv_match.return_value = heartbeat(mavlink.MAV_TYPE_GCS, mavlink.MAV_AUTOPILOT_INVALID)
+    conn.probably_vehicle_heartbeat.return_value = False
+    assert dev.wait_heartbeat(timeout=0.05) is None
 
 
 # --- COMMAND_LONG -------------------------------------------------------------
