@@ -1,0 +1,18 @@
+# ArduPlane parameters for the flap-servo bench test on a SpeedyBee F405 Wing.
+# Load with Mission Planner (Config > Full Parameter List > Load from file)
+# or MAVProxy (param load docs/speedybee_f405wing_servo_test.param). Reboot afterwards.
+#
+# USB port speaks MAVLink 2 (this is the default; listed so it is explicit).
+SERIAL0_PROTOCOL,2
+# Output S4 = flap servo under test. 0 = Disabled, so ArduPilot does not drive it
+# itself and MAV_CMD_DO_SET_SERVO from the PC has full control.
+# (On a flying aircraft you would use 2 = Flap instead.)
+SERVO4_FUNCTION,0
+SERVO4_MIN,1000
+SERVO4_MAX,2000
+SERVO4_TRIM,1500
+SERVO4_REVERSED,0
+# No hardware safety switch on this board: don't hold outputs off waiting for one.
+BRD_SAFETY_DEFLT,0
+# Telemetry on USB: SERVO_OUTPUT_RAW is part of the RC_CHAN stream (Hz).
+SR0_RC_CHAN,10
