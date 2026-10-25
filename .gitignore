@@ -1,4 +1,3 @@
-poetry.lock
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -93,3 +92,12 @@ docs/_build/
 
 # PyBuilder
 target/
+
+# Virtual environments
+.venv/
+venv/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/

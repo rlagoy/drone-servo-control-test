@@ -1,30 +1,93 @@
-[tool.poetry]
-name = "flik-demo"
-version = "0.1.0"
-description = "Flik Mavlink Demonstration"
-authors = ["Ryan Lagoy <rlagoy@gmail.com>"]
+[project]
+name = "drone-servo-control-test"
+version = "0.2.0"
+description = "MAVLink flap-servo control and test harness for an ArduPilot SpeedyBee F405 Wing"
+readme = "README.md"
+authors = [{ name = "Ryan Lagoy", email = "rlagoy@gmail.com" }]
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "pymavlink>=2.4.49",
+    "pyserial>=3.5",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.10,<4.0"
-pymavlink = "^2.4.49"
-pyserial = "^3.5"
-mavproxy = "^1.8.74"
+[project.optional-dependencies]
+# Ground-station CLI, handy for setting FC parameters from macOS/Linux.
+tools = ["mavproxy>=1.8.74"]
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.4.2"
-pylint = "^4.0.2"
-black = "25.9.0"
-flake8 = "^7.3.0"
-mypy = "^1.17.0"
-pre-commit = "^4.3.0"
-reorder-python-imports = "^2.6.0"
+[project.scripts]
+servo-bench-test = "drone_servo_control_test.main:cli"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.17",
+    "pre-commit>=4.3",
+    "pytest>=8.4",
+    "pytest-cov>=7.0",
+    "ruff>=0.14",
+]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
 
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "PL", "PT", "D", "RUF"]
+ignore = [
+    "PLR2004", # magic values are fine in tests and PWM constants
+    "D105",    # magic-method docstrings
+    "D107",    # __init__ docstrings (documented on the class)
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "PLR0913"]
 
 [tool.mypy]
-files = ["."]
-
+files = ["src", "tests"]
+python_version = "3.11"
+strict = true
+# pymavlink and pyserial ship without type hints.
 ignore_missing_imports = true
+disallow_untyped_calls = false
+disallow_subclassing_any = false
+
+[[tool.mypy.overrides]]
+module = [
+    "conftest",
+    "fake_autopilot",
+    "test_hardware",
+    "test_main",
+    "test_mavlink_device_sim",
+    "test_mavlink_device_unit",
+    "test_ports",
+]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "-m", "not hardware"]
+markers = [
+    "hardware: needs a real flight controller (run with: pytest -m hardware --device <port>)",
+]
+
+[tool.coverage.run]
+source = ["drone_servo_control_test"]
+branch = true
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = ['if __name__ == "__main__":']
+fail_under = 90
