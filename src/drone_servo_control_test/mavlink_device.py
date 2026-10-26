@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Iterable
 from types import TracebackType
 from typing import Any
 
 from pymavlink import mavutil
+
+log = logging.getLogger(__name__)
 
 #: Default safe PWM window (µs). Standard hobby servos expect 1000-2000 µs.
 PWM_MIN_US = 800
@@ -116,7 +119,7 @@ class MAVLinkDevice:
             raise ValueError(f"COMMAND_LONG takes at most 7 params, got {len(p)}")
         p += [0.0] * (7 - len(p))
 
-        print(f"Sending COMMAND_LONG {command} to {t_sys}.{t_comp} with params {p}")
+        log.debug("Sending COMMAND_LONG %d to %d.%d with params %s", command, t_sys, t_comp, p)
 
         device.mav.command_long_send(t_sys, t_comp, command, confirm, *p)
 

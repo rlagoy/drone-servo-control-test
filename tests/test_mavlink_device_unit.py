@@ -117,6 +117,13 @@ def test_command_long_pads_params_to_seven(dev, conn):
     )
 
 
+def test_command_long_logs_at_debug_not_stdout(dev, caplog, capsys):
+    with caplog.at_level("DEBUG", logger="drone_servo_control_test.mavlink_device"):
+        dev.command_long(DO_SET_SERVO, (4, 1500), expect_ack=False)
+    assert f"Sending COMMAND_LONG {DO_SET_SERVO} to 1.1" in caplog.text
+    assert capsys.readouterr().out == ""
+
+
 def test_command_long_accepts_generator(dev, conn):
     """Regression: params used to be iterated twice, so generators lost their values."""
     dev.command_long(DO_SET_SERVO, (x for x in (4, 1500)), expect_ack=False)
