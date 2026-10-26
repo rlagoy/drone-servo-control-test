@@ -2,37 +2,61 @@ name: ci
 
 on:
   push:
-    paths:
-    - "**.py"
-    - .github/workflows/ci.yml
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-
-  full:
-    runs-on: ${{ matrix.os }}
-
-    name: ${{ matrix.os }} Python ${{ matrix.python-version }}
-    strategy:
-      matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
-        os: [ubuntu-latest]
-        include:
-        - os: macos-latest
-          python-version: '3.14'
-        - os: windows-latest
-          python-version: '3.14'
-
+  lint:
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
-    - uses: actions/setup-python@v6
-      with:
-        python-version: ${{ matrix.python-version }}
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check --output-format=github .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
 
-    - run: pip install poetry
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --locked
+      # Hardware-in-the-loop tests are deselected by default (-m "not hardware").
+      - run: uv run pytest --cov --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
+        with:
+          name: coverage
+          path: coverage.xml
 
-    - run: poetry install --with dev
-
-    - run: poetry run flake8
-    - run: poetry run mypy
-
-    - run: poetry run pytest -k "not connect_and_wait"
+  build:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
