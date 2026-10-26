@@ -78,7 +78,47 @@ uv run mypy
 uv run pytest --cov
 ```
 
-Contributions: branch, open a pull request, and make sure CI is green. CI
-(`.github/workflows/ci.yml`) runs lint + type checks and the test suite on Windows, macOS and
-Linux for Python 3.11-3.14, then builds the package. Pushing a `v*` tag creates a GitHub Release
-with the wheel and sdist attached.
+Contributions: branch, open a pull request, and make sure CI is green. All commits must be
+signed and show as **Verified** on GitHub (set up commit signing with a key added to your GitHub
+account).
+
+## CI/CD
+
+```mermaid
+flowchart LR
+    PR["Pull request /<br/>push to main"] --> L["lint<br/>ruff · ruff format · mypy"]
+    PR --> T["test matrix<br/>3 OS × 4 Python = 12 jobs"]
+    L --> B["build<br/>uv build → dist artifact"]
+    T --> B
+    Tag["push tag v*"] --> R["release<br/>pytest · uv build · GitHub Release"]
+```
+
+**`ci`** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every pull request,
+every push to `main`, and on demand (*Actions → ci → Run workflow*). A newer push to the same
+branch cancels the run already in progress.
+
+| Job | Runs on | What it does |
+|---|---|---|
+| `lint` | Ubuntu | `uv sync --locked` (fails if `uv.lock` is out of date), `ruff check`, `ruff format --check`, `mypy` (strict) |
+| `test` | Ubuntu, Windows, macOS × Python 3.11, 3.12, 3.13, 3.14 | `uv run pytest --cov`: unit tests and simulator tests; hardware tests are deselected. Fails below 90 % coverage. The Ubuntu / 3.13 job uploads `coverage.xml` as an artifact. The jobs don't stop each other on failure, so you see every OS/Python combination that breaks. |
+| `build` | Ubuntu, after `lint` and all `test` jobs pass | `uv build`, uploads the wheel and sdist as the `dist` artifact |
+
+The hardware-in-the-loop tests can't run on GitHub's runners; run them locally with the flight
+controller plugged in (`uv run pytest -m hardware --device auto`) before merging changes to
+`mavlink_device.py`.
+
+**`release`** ([`.github/workflows/release.yml`](.github/workflows/release.yml)) runs when a
+`v*` tag is pushed: it runs the tests, builds the package and creates a GitHub Release with the
+wheel and sdist attached and generated release notes.
+
+```bash
+git tag -s v0.2.1 -m "v0.2.1"
+git push origin v0.2.1
+```
+
+**Dependabot** ([`.github/dependabot.yml`](.github/dependabot.yml)) opens monthly PRs for
+GitHub Actions and Python dependency updates (dev tools grouped into one PR); `ci` checks each.
+
+**pre-commit** ([`.pre-commit-config.yaml`](.pre-commit-config.yaml)) runs the same ruff and
+mypy checks plus `uv lock` and whitespace/YAML/TOML checks locally on every commit, so most
+`lint` failures are caught before you push.
