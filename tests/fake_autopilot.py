@@ -13,6 +13,7 @@ what lets us test the MAVLink component on any laptop or in CI.
 
 from __future__ import annotations
 
+import contextlib
 import socket
 import threading
 import time
@@ -41,6 +42,43 @@ def free_udp_port() -> int:
         return int(s.getsockname()[1])
 
 
+class UdpLink:
+    """
+    MAVLink over a UDP socket bound to its own ephemeral port, sending to ``127.0.0.1:port``.
+
+    Used instead of pymavlink's ``udpout:`` connection, which on Windows binds its socket to
+    the *destination* port: the simulator and the device under test then share one port and
+    the device's replies loop back to itself instead of reaching the simulator.
+    """
+
+    def __init__(self, port: int, source_system: int, source_component: int) -> None:
+        self._dest = ("127.0.0.1", port)
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.bind(("127.0.0.1", 0))
+        if hasattr(socket, "SIO_UDP_CONNRESET"):
+            # Windows: don't fail the next recv because an earlier send hit a closed port.
+            self._sock.ioctl(socket.SIO_UDP_CONNRESET, False)  # type: ignore[attr-defined]
+        self.mav = mavlink.MAVLink(self, srcSystem=source_system, srcComponent=source_component)
+
+    def write(self, buf: bytes) -> None:
+        """Send one encoded MAVLink packet (called by ``self.mav``'s ``*_send`` methods)."""
+        # Nobody listening yet is fine: UDP is lossy anyway.
+        with contextlib.suppress(ConnectionError):
+            self._sock.sendto(buf, self._dest)
+
+    def recv_messages(self, timeout: float) -> list[object]:
+        """Return the MAVLink messages in the next datagram, or [] after ``timeout`` seconds."""
+        self._sock.settimeout(timeout)
+        try:
+            data = self._sock.recv(65535)
+        except (TimeoutError, ConnectionError):
+            return []
+        return self.mav.parse_buffer(data) or []
+
+    def close(self) -> None:
+        self._sock.close()
+
+
 class FakeAutopilot:
     """
     Background-thread MAVLink autopilot.
@@ -63,9 +101,7 @@ class FakeAutopilot:
         self.commands: list[tuple[int, int]] = []  # (servo, pwm) received, in order
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self._conn = mavutil.mavlink_connection(
-            f"udpout:127.0.0.1:{self.port}", source_system=1, source_component=1
-        )
+        self._link = UdpLink(self.port, source_system=1, source_component=1)
 
     # --- lifecycle -------------------------------------------------------------
 
@@ -78,7 +114,7 @@ class FakeAutopilot:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=2)
-        self._conn.close()
+        self._link.close()
 
     def __enter__(self) -> FakeAutopilot:
         return self.start()
@@ -95,35 +131,35 @@ class FakeAutopilot:
             if now >= next_tx:
                 self._send_telemetry()
                 next_tx = now + self.period
-            msg = self._conn.recv_match(type="COMMAND_LONG", blocking=True, timeout=0.01)
-            if msg is not None:
-                self._handle_command(msg)
+            for msg in self._link.recv_messages(timeout=0.01):
+                if msg.get_type() == "COMMAND_LONG":  # type: ignore[attr-defined]
+                    self._handle_command(msg)
 
     def _send_telemetry(self) -> None:
-        self._conn.mav.heartbeat_send(
+        self._link.mav.heartbeat_send(
             mavlink.MAV_TYPE_FIXED_WING, mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA, 0, 0, 0
         )
         time_usec = int(time.monotonic() * 1e6) & 0xFFFFFFFF
-        self._conn.mav.servo_output_raw_send(time_usec, 0, *self.servo_pwm[:8])
+        self._link.mav.servo_output_raw_send(time_usec, 0, *self.servo_pwm[:8])
 
     def _handle_command(self, msg: object) -> None:
         command = int(msg.command)  # type: ignore[attr-defined]
         if command == mavlink.MAV_CMD_SET_MESSAGE_INTERVAL:
-            self._conn.mav.command_ack_send(command, mavlink.MAV_RESULT_ACCEPTED)
+            self._link.mav.command_ack_send(command, mavlink.MAV_RESULT_ACCEPTED)
             return
         if command != mavlink.MAV_CMD_DO_SET_SERVO:
-            self._conn.mav.command_ack_send(command, mavlink.MAV_RESULT_UNSUPPORTED)
+            self._link.mav.command_ack_send(command, mavlink.MAV_RESULT_UNSUPPORTED)
             return
         servo = int(msg.param1)  # type: ignore[attr-defined]
         pwm = int(msg.param2)  # type: ignore[attr-defined]
         self.commands.append((servo, pwm))
         if self.ack_mode is AckMode.DENY or not 1 <= servo <= len(self.servo_pwm):
-            self._conn.mav.command_ack_send(command, mavlink.MAV_RESULT_DENIED)
+            self._link.mav.command_ack_send(command, mavlink.MAV_RESULT_DENIED)
             return
         self.servo_pwm[servo - 1] = pwm
         self._send_telemetry()  # report the new output right away
         if self.ack_mode is AckMode.ACCEPT:
-            self._conn.mav.command_ack_send(command, mavlink.MAV_RESULT_ACCEPTED)
+            self._link.mav.command_ack_send(command, mavlink.MAV_RESULT_ACCEPTED)
 
 
 if __name__ == "__main__":

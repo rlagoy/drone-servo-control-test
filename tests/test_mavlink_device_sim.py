@@ -7,7 +7,7 @@ Same code path as the hardware test, but the SpeedyBee is replaced by FakeAutopi
 from __future__ import annotations
 
 import pytest
-from fake_autopilot import AckMode, FakeAutopilot
+from fake_autopilot import AckMode, FakeAutopilot, UdpLink
 from pymavlink import mavutil
 
 from drone_servo_control_test import MAVLinkDevice, ack_ok
@@ -73,9 +73,7 @@ def test_missing_ack_times_out():
 def test_gcs_heartbeat_does_not_hide_autopilot():
     """A GCS heartbeat arriving first (the FC forwards them) must not be taken for the FC's."""
     fc = FakeAutopilot()
-    gcs = mavutil.mavlink_connection(
-        f"udpout:127.0.0.1:{fc.port}", source_system=255, source_component=190
-    )
+    gcs = UdpLink(fc.port, source_system=255, source_component=190)
     try:
         with MAVLinkDevice(fc.connection_string) as dev:
             for _ in range(3):
