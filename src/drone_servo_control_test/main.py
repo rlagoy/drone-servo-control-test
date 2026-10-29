@@ -30,14 +30,17 @@ def build_steps(pwm_min: int, pwm_max: int, pwm_center: int) -> list[Step]:
         Step("Power on the FC with 7 V (battery or bench supply). Press Enter to continue..."),
         Step("Measure the 5 V BEC output on the servo rail..."),
         Step(
-            f"Setting PWM to {pwm_min} us. Measure upward deflection angle and PWM waveform.",
+            f"Setting PWM to {pwm_min} us. Measure deflection angle and PWM waveform.",
             pwm_min,
         ),
         Step(
-            f"Setting PWM to {pwm_max} us. Measure downward deflection angle and PWM waveform.",
+            f"Setting PWM to {pwm_max} us. Measure deflection angle and PWM waveform.",
             pwm_max,
         ),
-        Step(f"Setting PWM to {pwm_center} us. Measure deflection angle.", pwm_center),
+        Step(
+            f"Setting PWM to {pwm_center} us. Measure deflection angle and PWM waveform.",
+            pwm_center,
+        ),
         Step("Deflect the servo horn by hand and measure current."),
         Step("Remove the servo and measure current."),
     ]
